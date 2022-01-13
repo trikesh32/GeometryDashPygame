@@ -4,11 +4,12 @@ import sys
 import csv
 
 SZ = (800, 400)
-FPS = 120
-A = 9.8
+FPS = 360
+A = 9.8 / (FPS / 120)
 JUMP_V = 300
 ORB_JUMP_V = 600
 V_X = 180
+ANGLE_PER_SECOND = 360 / FPS
 
 
 def load_image(name, color_key=None):
@@ -30,11 +31,10 @@ def level_data(level):
 
 
 class Block(pygame.sprite.Sprite):
-    image = load_image("block_1.png")
 
-    def __init__(self, group, coords, size):
+    def __init__(self, group, coords, size, image=load_image("block_1.png")):
         super().__init__(group)
-        image = pygame.transform.scale(Block.image, (size, size))
+        image = pygame.transform.scale(image, (size, size))
         image.set_alpha(256)
         self.image = image
         self.rect = self.image.get_rect()
@@ -42,11 +42,10 @@ class Block(pygame.sprite.Sprite):
 
 
 class Spike(pygame.sprite.Sprite):
-    image = load_image("obj-spike.png")
 
-    def __init__(self, group, coords, size):
+    def __init__(self, group, coords, size, image=load_image("obj-spike.png")):
         super().__init__(group)
-        image = pygame.transform.scale(Spike.image, (size, size)).convert_alpha()
+        image = pygame.transform.scale(image, (size, size)).convert_alpha()
         image.set_alpha(256)
         self.mask = pygame.mask.from_surface(image)
         self.image = image
@@ -55,12 +54,11 @@ class Spike(pygame.sprite.Sprite):
 
 
 class Player(pygame.sprite.Sprite):
-    image = load_image("avatar.png")
 
-    def __init__(self, group, coords, size):
+    def __init__(self, group, coords, size, alpha=256, image=load_image('avatar.png')):
         super().__init__(group)
-        image = pygame.transform.scale(Player.image, (size, size)).convert_alpha()
-        image.set_alpha(256)
+        image = pygame.transform.scale(image, (size, size)).convert_alpha()
+        image.set_alpha(alpha)
         self.image = image
         self.mask = pygame.mask.from_surface(image)
         self.rect = self.image.get_rect()
@@ -68,26 +66,31 @@ class Player(pygame.sprite.Sprite):
 
 
 class Level:
+
     def __init__(self, screen, level):
         self.group = pygame.sprite.Group()
         self.v_y = 0
         self.a = A / FPS
+        self.angle = 0
+        self.player_angle = 0
         self.player = None
         self.spikes = []
         self.screen = screen
         self.is_jumping = False
         self.level_elements = []
         self.level = level_data(level)
+        self.player_alpha = 0
         self.delta = 0
         self.size = SZ[1] // 20
         self.y = self.find_spawn_point() * self.size
         self.x = self.size * 3
-        self.player = Player(self.group, self.y, self.size)
+        self.player = Player(self.group, self.y, self.size, 0)
+        self.player_image = self.player.image
 
     def render(self):
         self.spikes = []
         self.group = pygame.sprite.Group()
-        self.player = Player(self.group, self.y, self.size)
+        self.player = Player(self.group, self.y, self.size, self.player_alpha, self.player_image)
         self.level_elements = []
         for i in range(len(self.level)):
             self.level_elements.append([])
@@ -95,12 +98,15 @@ class Level:
                 if self.level[i][j] == 'b':
                     Block(self.group, (self.size * j - self.delta, self.size * i), self.size)
                     self.level_elements[i].append(('b', (self.size * j - self.delta, self.size * i)))
+
                 if self.level[i][j] == 's':
                     spike = Spike(self.group, (self.size * j - self.delta, self.size * i), self.size)
                     self.level_elements[i].append(('s', (self.size * j - self.delta, self.size * i)))
                     self.spikes.append(spike)
+
                 if self.level[i][j] == '0':
                     self.level_elements[i].append(None)
+
         self.group.draw(self.screen)
 
     def find_spawn_point(self):
@@ -110,6 +116,7 @@ class Level:
 
     def collide_with_player(self):
         collides = []
+
         for i in range(len(self.level_elements)):
             for j in range(len(self.level_elements[i])):
                 if self.level_elements[i][j]:
@@ -122,14 +129,17 @@ class Level:
                     s2 = (by1 <= ay1 <= by2) or (by1 <= ay2 <= by2)
                     s3 = (ax1 <= bx1 <= ax2) or (ax1 <= bx2 <= ax2)
                     s4 = (ay1 <= by1 <= ay2) or (ay1 <= by2 <= ay2)
+
                     if ((s1 and s2) or (s3 and s4)) or ((s1 and s4) or (s3 and s2)):
                         collides.append(self.level_elements[i][j])
+
         return collides
 
 
 def main():
     running = True
     screen = pygame.display.set_mode(SZ)
+    is_rotated = False
     pygame.display.set_caption("geometryDashPygame")
     clock = pygame.time.Clock()
     global_jumping = False
@@ -141,36 +151,60 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+
             if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE or event.type == pygame.MOUSEBUTTONDOWN:
                 if not level.is_jumping:
                     global_jumping = True
                     level.is_jumping = True
                     level.v_y = JUMP_V
+
                 if level.v_y < 0:
                     global_jumping = True
+
             if event.type == pygame.KEYUP and event.key == pygame.K_SPACE or event.type == pygame.MOUSEBUTTONUP:
                 global_jumping = False
+
         if level.is_jumping:
             level.y -= level.v_y / FPS
             level.v_y -= A
+            is_rotated = False
+            level.player_alpha = 0
+        else:
+            level.player_alpha = 256
+
+        if level.player_alpha == 0:
+            level.angle -= ANGLE_PER_SECOND
+
         for _ in level.collide_with_player():
             if _[0] == 'b' and level.y + level.size * 0.75 >= _[1][1]:
                 running = False
-            elif _[0] == 'b' and _[1][1] - level.size <= level.y and \
+
+            if _[0] == 'b' and _[1][1] - level.size <= level.y and \
                     (_[1][0] >= level.x or _[1][0] + level.size >= level.x):
                 level.v_y = 0
                 level.y = _[1][1] - level.size
                 level.is_jumping = False
         if not level.collide_with_player():
             level.is_jumping = True
+
         if global_jumping and not level.is_jumping:
             level.is_jumping = True
             level.v_y = JUMP_V
+
         for spike in level.spikes:
             if pygame.sprite.collide_mask(level.player, spike):
                 running = False
+
         screen.blit(bg, (0, 0))
         level.render()
+        if level.player_alpha == 0:
+            image = pygame.transform.scale(load_image('avatar.png'), (level.size, level.size)).convert_alpha()
+            screen.blit(pygame.transform.rotate(image, level.angle), (level.x, level.y))
+        elif not is_rotated:
+            level.angle = 90 * (round(level.angle / 90))
+            level.player_image = pygame.transform.rotate(level.player_image, level.angle - level.player_angle)
+            level.player_angle = level.angle
+            is_rotated = True
         pygame.display.flip()
         level.delta += V_X / FPS
         clock.tick(FPS)
