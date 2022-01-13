@@ -5,14 +5,16 @@ import csv
 
 SZ = (800, 400)
 FPS = 120
-V_Y = 175
-V_X = 175
+A = 9.8
+JUMP_V = 300
+ORB_JUMP_V = 600
+V_X = 180
 
 
-def load_image(name, colorkey=None):
+def load_image(name, color_key=None):
     fullname = os.path.join('images', name)
     if not os.path.isfile(fullname):
-        print(f"Файл с изображением '{fullname}' не найден")
+        print(f"File with image '{fullname}' not found")
         sys.exit()
     image = pygame.image.load(fullname)
     return image
@@ -68,14 +70,13 @@ class Player(pygame.sprite.Sprite):
 class Level:
     def __init__(self, screen, level):
         self.group = pygame.sprite.Group()
+        self.v_y = 0
+        self.a = A / FPS
         self.player = None
         self.spikes = []
         self.screen = screen
         self.is_jumping = False
-        self.is_jumping_up = False
-        self.is_jumping_down = False
         self.level_elements = []
-        self.start_pos_jump = None
         self.level = level_data(level)
         self.delta = 0
         self.size = SZ[1] // 20
@@ -125,81 +126,46 @@ class Level:
                         collides.append(self.level_elements[i][j])
         return collides
 
-    def check_defeat(self):
-        for _ in self.collide_with_player():
-            if _[0] == 's':
-                return True
-        return False
-
 
 def main():
     running = True
     screen = pygame.display.set_mode(SZ)
     pygame.display.set_caption("geometryDashPygame")
     clock = pygame.time.Clock()
+    global_jumping = False
     bg = load_image('bg.png')
+    bg = pygame.transform.scale(bg, SZ).convert_alpha()
     level = Level(screen, 'test_level.csv')
     screen.fill("white")
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
-                if not level.is_jumping_up and not level.is_jumping_down:
-                    level.is_jumping_up = True
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE or event.type == pygame.MOUSEBUTTONDOWN:
+                if not level.is_jumping:
+                    global_jumping = True
                     level.is_jumping = True
-                    level.start_pos_jump = level.y
-            if event.type == pygame.KEYUP and event.key == pygame.K_SPACE:
-                level.is_jumping = False
+                    level.v_y = JUMP_V
+                if level.v_y < 0:
+                    global_jumping = True
+            if event.type == pygame.KEYUP and event.key == pygame.K_SPACE or event.type == pygame.MOUSEBUTTONUP:
+                global_jumping = False
         if level.is_jumping:
-            if level.is_jumping_up:
-                if not level.start_pos_jump - (level.size * 2.5) - 1 > level.y < level.start_pos_jump - \
-                       (level.size * 2) + 1:
-                    level.y -= V_Y / FPS
-                else:
-                    level.is_jumping_up = False
-                    level.is_jumping_down = True
-            elif level.is_jumping_down:
-                platform_existing = False
-                platform_y = None
-                collides = level.collide_with_player()
-                for _ in collides:
-                    if _[0] == 'b' and _[1][1] - level.size <= level.y and (_[1][0] >= level.x or _[1][0] +
-                                                                            level.size >= level.x):
-                        platform_existing = True
-                        platform_y = _[1][1]
-                if not platform_existing:
-                    level.y += V_Y / FPS
-                else:
-                    level.y = platform_y - level.size
-                    level.start_pos_jump = level.y
-                    level.is_jumping_up = True
-                    level.is_jumping_down = False
-        else:
-            if level.is_jumping_up:
-                if not level.start_pos_jump - (level.size * 2.5) - 1 > level.y < level.start_pos_jump - \
-                       (level.size * 2) + 1:
-                    level.y -= V_Y / FPS
-                else:
-                    level.is_jumping_up = False
-                    level.is_jumping_down = True
-            elif level.is_jumping_down:
-                platform_existing = False
-                platform_y = None
-                collides = level.collide_with_player()
-                for _ in collides:
-                    if _[0] == 'b' and _[1][1] - level.size <= level.y and (_[1][0] >= level.x or _[1][0] +
-                                                                            level.size >= level.x):
-                        platform_existing = True
-                        platform_y = _[1][1]
-                if not platform_existing:
-                    level.y += V_Y / FPS
-                else:
-                    level.y = platform_y - level.size
-                    level.is_jumping_up = False
-                    level.is_jumping_down = False
-        if not level.collide_with_player() and not level.is_jumping_up and not level.is_jumping_down:
-            level.is_jumping_down = True
+            level.y -= level.v_y / FPS
+            level.v_y -= A
+        for _ in level.collide_with_player():
+            if _[0] == 'b' and level.y + level.size * 0.75 >= _[1][1]:
+                running = False
+            elif _[0] == 'b' and _[1][1] - level.size <= level.y and \
+                    (_[1][0] >= level.x or _[1][0] + level.size >= level.x):
+                level.v_y = 0
+                level.y = _[1][1] - level.size
+                level.is_jumping = False
+        if not level.collide_with_player():
+            level.is_jumping = True
+        if global_jumping and not level.is_jumping:
+            level.is_jumping = True
+            level.v_y = JUMP_V
         for spike in level.spikes:
             if pygame.sprite.collide_mask(level.player, spike):
                 running = False
