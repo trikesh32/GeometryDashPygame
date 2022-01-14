@@ -3,12 +3,11 @@ import os
 import sys
 import csv
 
-SZ = (800, 400)
-FPS = 360
-A = 9.8 / (FPS / 120)
-JUMP_V = 300
-ORB_JUMP_V = 600
-V_X = 180
+SZ = (800, 700)
+FPS = 300
+A = (9.8 / (FPS / 120)) * (SZ[1] / 400)
+JUMP_V = 300 * (SZ[1] / 400)
+V_X = 200 * (SZ[1] / 400)
 ANGLE_PER_SECOND = 360 / FPS
 
 
@@ -28,6 +27,11 @@ def level_data(level):
     for _ in data:
         const.append(_)
     return const
+
+
+def find_delta(changed_size, size):
+    center = size / 2
+    return center - (changed_size / 2)
 
 
 class Block(pygame.sprite.Sprite):
@@ -65,6 +69,20 @@ class Player(pygame.sprite.Sprite):
         self.rect.x, self.rect.y = size * 3, coords
 
 
+class Orb(pygame.sprite.Sprite):
+
+    frames = ['orb-yellow1.png', 'orb-yellow2.png', 'orb-yellow.png']
+
+    def __init__(self, group, coords, size, alpha=256, current_frame=0):
+        super().__init__(group)
+        image = pygame.transform.scale(load_image(Orb.frames[current_frame]), (size, size)).convert_alpha()
+        image.set_alpha(alpha)
+        self.image = image
+        self.mask = pygame.mask.from_surface(image)
+        self.rect = self.image.get_rect()
+        self.rect.x, self.rect.y = coords
+
+
 class Level:
 
     def __init__(self, screen, level):
@@ -75,6 +93,7 @@ class Level:
         self.player_angle = 0
         self.player = None
         self.spikes = []
+        self.orbs = []
         self.screen = screen
         self.is_jumping = False
         self.level_elements = []
@@ -87,8 +106,9 @@ class Level:
         self.player = Player(self.group, self.y, self.size, 0)
         self.player_image = self.player.image
 
-    def render(self):
+    def render(self, c_o_f):
         self.spikes = []
+        self.orbs = []
         self.group = pygame.sprite.Group()
         self.player = Player(self.group, self.y, self.size, self.player_alpha, self.player_image)
         self.level_elements = []
@@ -103,6 +123,11 @@ class Level:
                     spike = Spike(self.group, (self.size * j - self.delta, self.size * i), self.size)
                     self.level_elements[i].append(('s', (self.size * j - self.delta, self.size * i)))
                     self.spikes.append(spike)
+
+                if self.level[i][j] == 'o':
+                    orb = Orb(self.group, (self.size * j - self.delta, self.size * i), self.size, current_frame=c_o_f)
+                    self.level_elements[i].append(('o', (self.size * j - self.delta, self.size * i)))
+                    self.orbs.append(orb)
 
                 if self.level[i][j] == '0':
                     self.level_elements[i].append(None)
@@ -139,21 +164,28 @@ class Level:
 def main():
     running = True
     screen = pygame.display.set_mode(SZ)
+    count_orb = 0
+    current_orb_frame = 0
     is_rotated = False
+    level = Level(screen, 'test_level1.csv')
     pygame.display.set_caption("geometryDashPygame")
     clock = pygame.time.Clock()
     global_jumping = False
     bg = load_image('bg.png')
     bg = pygame.transform.scale(bg, SZ).convert_alpha()
-    level = Level(screen, 'test_level.csv')
     screen.fill("white")
     while running:
+        collides = level.collide_with_player()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
 
             if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE or event.type == pygame.MOUSEBUTTONDOWN:
-                if not level.is_jumping:
+                on_orb = False
+                for orb in level.orbs:
+                    if pygame.sprite.collide_mask(level.player, orb):
+                        on_orb = True
+                if not level.is_jumping or on_orb:
                     global_jumping = True
                     level.is_jumping = True
                     level.v_y = JUMP_V
@@ -175,7 +207,7 @@ def main():
         if level.player_alpha == 0:
             level.angle -= ANGLE_PER_SECOND
 
-        for _ in level.collide_with_player():
+        for _ in collides:
             if _[0] == 'b' and level.y + level.size * 0.75 >= _[1][1]:
                 running = False
 
@@ -184,28 +216,40 @@ def main():
                 level.v_y = 0
                 level.y = _[1][1] - level.size
                 level.is_jumping = False
-        if not level.collide_with_player():
+        if not collides:
             level.is_jumping = True
 
         if global_jumping and not level.is_jumping:
             level.is_jumping = True
             level.v_y = JUMP_V
 
+        if level.y < level.size * -40 or level.y > level.size * 40:
+            running = False
+
         for spike in level.spikes:
             if pygame.sprite.collide_mask(level.player, spike):
                 running = False
 
+        if count_orb % (FPS * 0.3) == 0:
+            current_orb_frame += 1
+
         screen.blit(bg, (0, 0))
-        level.render()
+        level.render(current_orb_frame % 3)
+
         if level.player_alpha == 0:
             image = pygame.transform.scale(load_image('avatar.png'), (level.size, level.size)).convert_alpha()
-            screen.blit(pygame.transform.rotate(image, level.angle), (level.x, level.y))
+            image = pygame.transform.rotate(image, level.angle)
+            delt = find_delta(image.get_size()[0], level.size)
+            screen.blit(image, (level.x + delt, level.y + delt))
+
         elif not is_rotated:
             level.angle = 90 * (round(level.angle / 90))
             level.player_image = pygame.transform.rotate(level.player_image, level.angle - level.player_angle)
             level.player_angle = level.angle
             is_rotated = True
+
         pygame.display.flip()
+        count_orb += 1
         level.delta += V_X / FPS
         clock.tick(FPS)
 
