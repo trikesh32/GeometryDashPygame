@@ -1,42 +1,64 @@
 import pygame
 import os
-import sys
 import csv
-import tkinter
-import tkinter.filedialog
+from tkinter.filedialog import asksaveasfilename, askopenfilename
 
-SZ = (800, 700)
+
+SZ = (960, 540)
 FPS = 180
 A = (10 / (FPS / 120)) * (SZ[1] / 400)
 JUMP_V = 300 * (SZ[1] / 400)
 V_X = 200 * (SZ[1] / 400)
 ANGLE_PER_SECOND = 360 / FPS
+skin = 'avatar.png'
 
 
 def load_image(name, color_key=None):
     fullname = os.path.join('resources', os.path.join('images', name))
     if not os.path.isfile(fullname):
-        print(f"File with image '{fullname}' not found")
-        sys.exit()
+        raise FileNotFoundError
     image = pygame.image.load(fullname)
     return image
 
 
 def load_skin(name, color_key=None):
-    fullname = name
+    fullname = os.path.join('skins', name)
     if not os.path.isfile(fullname):
-        print(f"File with image '{fullname}' not found")
-        sys.exit()
+        raise FileNotFoundError
     image = pygame.image.load(fullname)
     return image
 
 
+def new_file_save(data):
+    f = asksaveasfilename(initialdir='levels')
+    with open(f'{f}.csv', 'w+', newline='') as f:
+        writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        writer.writerows(data)
+        f.close()
+
+
+def file_save(data, level):
+    with open(f'levels\\{level}', 'w+', newline='') as f:
+        if f is None:
+            return
+        writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        writer.writerows(data)
+        f.close()
+
+
 def level_data(level):
     csvfile = open(os.path.join('levels', level), newline='')
+    max_len = 0
     data = list(csv.reader(csvfile, delimiter=',', quotechar='"'))
-    const = [['0'] * len(data[0])] * (20 - len(data))
     for _ in data:
-        const.append(_)
+        if len(_) > max_len:
+            max_len = len(_)
+    const = [['0'] * max_len] * (20 - len(data))
+    for _ in data:
+        const.append(_ + (['0'] * (max_len - len(_))))
+    for i in range(20):
+        if const[i][max_len - 1] == '0':
+            const[i][max_len - 1] = 'v'
     return const
 
 
@@ -67,11 +89,13 @@ def pause(screen, size, play_coords, menu_coords):
     screen.blit(menu_btn_image, menu_coords)
 
 
-def prompt_file():
-    top = tkinter.Tk()
-    top.withdraw()
-    file_name = tkinter.filedialog.askopenfilename(parent=top)
-    top.destroy()
+def prompt_level():
+    file_name = askopenfilename(initialdir='levels').split('/')[-1]
+    return file_name
+
+
+def prompt_skin():
+    file_name = askopenfilename(initialdir='skins').split('/')[-1]
     return file_name
 
 
@@ -94,6 +118,17 @@ class Block(pygame.sprite.Sprite):
         self.rect.x, self.rect.y = coords
 
 
+class WinBlock(pygame.sprite.Sprite):
+
+    def __init__(self, group, coords, size, image=load_image("win_block.png")):
+        super().__init__(group)
+        image = pygame.transform.scale(image, (size, size))
+        image.set_alpha(256)
+        self.image = image
+        self.rect = self.image.get_rect()
+        self.rect.x, self.rect.y = coords
+
+
 class Spike(pygame.sprite.Sprite):
 
     def __init__(self, group, coords, size, image=load_image("obj-spike.png")):
@@ -108,10 +143,10 @@ class Spike(pygame.sprite.Sprite):
 
 class Wrecked(pygame.sprite.Sprite):
 
-    def __init__(self, group, coords, size, image=load_image("obj-breakable.png")):
+    def __init__(self, group, coords, size, alpha=256, image=load_image("obj-breakable.png")):
         super().__init__(group)
         image = pygame.transform.scale(image, (size, size)).convert_alpha()
-        image.set_alpha(256)
+        image.set_alpha(alpha)
         self.mask = pygame.mask.from_surface(image)
         self.image = image
         self.rect = self.image.get_rect()
@@ -120,7 +155,7 @@ class Wrecked(pygame.sprite.Sprite):
 
 class Player(pygame.sprite.Sprite):
 
-    def __init__(self, group, coords, size, alpha=256, image=load_image('avatar.png')):
+    def __init__(self, group, coords, size, alpha=256, image=load_skin('avatar.png')):
         super().__init__(group)
         image = pygame.transform.scale(image, (size, size)).convert_alpha()
         image.set_alpha(alpha)
@@ -146,11 +181,11 @@ class Orb(pygame.sprite.Sprite):
 
 class Level:
 
-    def __init__(self, screen, level):
+    def __init__(self, screen, level, skin_name):
         self.group = pygame.sprite.Group()
         self.v_y = 0
         self.a = A / FPS
-        self.size = SZ[1] // 20
+        self.size = SZ[1] / 20
         self.angle = 0
         self.player_angle = 0
         self.player = None
@@ -169,7 +204,7 @@ class Level:
         self.delta = 0
         self.y = self.find_spawn_point() * self.size
         self.x = self.size * 3
-        self.player = Player(self.group, self.y, self.size, 0)
+        self.player = Player(self.group, self.y, self.size, 0, load_skin(skin_name))
         self.player_image = self.player.image
 
     def render(self, c_o_f, explosive=False, e_o_f=0):
@@ -198,6 +233,10 @@ class Level:
                 if self.level[i][j] == 'w':
                     Wrecked(self.group, (self.size * j - self.delta, self.size * i), self.size)
                     self.level_elements[i].append(('w', (self.size * j - self.delta, self.size * i)))
+
+                if self.level[i][j] == 'v':
+                    WinBlock(self.group, (self.size * j - self.delta, self.size * i), self.size)
+                    self.level_elements[i].append(('v', (self.size * j - self.delta, self.size * i)))
 
                 if self.level[i][j] == '0':
                     self.level_elements[i].append(None)
@@ -234,11 +273,9 @@ class Level:
         return collides
 
 
-def game(skin_path='bebra'):
+def game(screen, clock, level_name, skin_name):
+    victory = False
     running = True
-    screen = pygame.display.set_mode(SZ)
-    pygame.display.set_caption("GeometryDashPygame")
-    clock = pygame.time.Clock()
     while running:
         actual_try = True
         is_paused = False
@@ -247,7 +284,7 @@ def game(skin_path='bebra'):
         current_orb_frame = 0
         current_exp_frame = 0
         is_rotated = False
-        level = Level(screen, 'test_level.csv')
+        level = Level(screen, level_name, skin_name)
         dead = False
         global_jumping = False
         explosive = False
@@ -319,7 +356,7 @@ def game(skin_path='bebra'):
 
                 for _ in collides:
                     if _[0] == 'b' and level.y + level.size * 0.75 >= _[1][1]:
-                        if not _[1][1] + level.size * 0.75 < level.y:
+                        if not _[1][1] + level.size * 0.75 < level.y or not level.y:
                             dead = True
 
                     if _[0] == 'b' and _[1][1] - level.size <= level.y and \
@@ -328,6 +365,11 @@ def game(skin_path='bebra'):
                             level.v_y = 0
                             level.y = _[1][1] - level.size
                             level.is_jumping = False
+
+                    if _[0] == 'v':
+                        running = False
+                        actual_try = False
+                        victory = True
 
                 if not collides:
                     level.is_jumping = True
@@ -343,7 +385,7 @@ def game(skin_path='bebra'):
                     if pygame.sprite.collide_mask(level.player, spike):
                         dead = True
 
-                if count_orb % (FPS * 0.3) == 0:
+                if count_orb % (FPS * 0.1) == 0:
                     current_orb_frame += 1
 
                 if not dead:
@@ -361,7 +403,7 @@ def game(skin_path='bebra'):
                 level.render(current_orb_frame % 3, explosive, current_exp_frame)
 
                 if level.player_alpha == 0 and not dead:
-                    image = pygame.transform.scale(load_image('avatar.png'), (level.size, level.size)).convert_alpha()
+                    image = pygame.transform.scale(load_skin(skin_name), (level.size, level.size)).convert_alpha()
                     image = pygame.transform.rotate(image, level.angle)
                     delt = find_delta(image.get_size()[0], level.size)
                     screen.blit(image, (level.x + delt, level.y + delt))
@@ -379,6 +421,218 @@ def game(skin_path='bebra'):
             pygame.display.flip()
             clock.tick(FPS)
 
+        if victory:
+            win_screen(screen, clock)
+
+
+def win_screen(screen, clock):
+    running = True
+    font = pygame.font.Font(None, 50)
+    text1 = font.render("НИЧЕГО СЕБЕ ТЫ КРУТОЙ, УРОВЕНЬ ПРОЙДЕН!!!", True, 'white')
+    partia = load_image('partia.png')
+    text2 = font.render("ПАРТИЯ ГОРДИТСЯ ТОБОЙ!!!", True, 'white')
+    text3 = font.render("нажми enter или пробел чтобы продолжить", True, 'white')
+    pic_x = SZ[0] // 2 - partia.get_size()[0] // 2
+    pic_y = SZ[1] // 2 - partia.get_size()[1] // 2
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN and (event.key == pygame.K_RETURN or event.key == pygame.K_SPACE):
+                running = False
+            if event.type == pygame.QUIT:
+                running = False
+        screen.fill('black')
+        screen.blit(text1, (SZ[0] // 2 - text1.get_size()[0] // 2, 0))
+        screen.blit(partia, (pic_x, pic_y))
+        screen.blit(text2, (SZ[0] // 2 - text2.get_size()[0] // 2, pic_y + partia.get_size()[1]))
+        screen.blit(text3, (SZ[0] // 2 - text3.get_size()[0] // 2, SZ[1] - 50))
+        pygame.display.flip()
+        clock.tick(FPS)
+
+
+def skin_changer(screen, clock):
+    global skin
+    bg = load_image('bg.png')
+    bg = pygame.transform.scale(bg, SZ)
+    size = (121, 120)
+    skin_pic = pygame.transform.scale(load_skin(skin), size)
+    folder_pic = pygame.transform.scale(load_image('folder.png'), size)
+    folder_pos = ((SZ[0] // 2 + 40), SZ[1] // 2 - (skin_pic.get_size()[1] // 2))
+    skin_pos = (SZ[0] // 2 - (skin_pic.get_size()[0] + 40), SZ[1] // 2 - (skin_pic.get_size()[1] // 2))
+    font = pygame.font.SysFont('arial', 25)
+    text1 = font.render('Загрузить скин', True, (255, 255, 255))
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.pos[0] in range(0, 50) and event.pos[1] in range(0, 50):
+                    running = False
+                if event.pos[0] in range(folder_pos[0], folder_pos[0] + folder_pic.get_size()[0]):
+                    if event.pos[1] in range(folder_pos[1], folder_pos[1] + folder_pic.get_size()[1]):
+                        try:
+                            skin = prompt_skin()
+                            skin_pic = pygame.transform.scale(load_skin(skin), size)
+                        except FileNotFoundError:
+                            pass
+        screen.blit(bg, (0, 0))
+        pygame.draw.polygon(screen, 'black', ((10, 25), (40, 10), (40, 40)))
+        pygame.draw.polygon(screen, 'white', ((12, 25), (38, 12), (38, 38)))
+        screen.blit(skin_pic, skin_pos)
+        screen.blit(folder_pic, folder_pos)
+        screen.blit(text1, (folder_pos[0], folder_pos[1] + folder_pic.get_size()[0]))
+        clock.tick(FPS)
+        pygame.display.flip()
+
+
+def main_menu():
+    global skin
+    pygame.init()
+    running = True
+    screen = pygame.display.set_mode(SZ)
+    pygame.display.set_caption("GeometryDashPygame")
+    clock = pygame.time.Clock()
+    bg = load_image('bg.png')
+    bg = pygame.transform.scale(bg, SZ)
+    main_menu_btns = load_image('main_menu.png')
+    main_menu_btns = pygame.transform.scale(main_menu_btns, SZ)
+    main_menu_btns.set_alpha(256)
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.pos[0] in range(240, 350) and event.pos[1] in range(200, 310):
+                    skin_changer(screen, clock)
+                if event.pos[0] in range(395, 560) and event.pos[1] in range(170, 335):
+                    try:
+                        level = prompt_level()
+                        game(screen, clock, level, skin)
+                    except FileNotFoundError:
+                        pass
+                if event.pos[0] in range(610, 720) and event.pos[1] in range(200, 310):
+                    level_redactor(screen, clock)
+        screen.blit(bg, (0, 0))
+        screen.blit(main_menu_btns, (0, 0))
+        pygame.display.flip()
+        clock.tick(FPS)
+
+
+def level_redactor(screen, clock):
+    red_display = pygame.Surface((SZ[1] - 75, SZ[1] - 75))
+    display_coord = (SZ[0]/2 - red_display.get_size()[0]/2, 0)
+    font = pygame.font.SysFont('arial', 25)
+    save = font.render('Сохранить', True, 'white')
+    save_as = font.render('Сохранить как', True, 'white')
+    op = font.render('Открыть', True, 'white')
+    hint = font.render("'o' for orb, 'b' for block, 's' for spike, 'v' for win block, '0' for empty", True, 'white')
+    save_coords = (SZ[0]//2 - save.get_size()[0] - 25, SZ[1] - save.get_size()[1] - save.get_size()[1] // 2)
+    save_as_coords = (SZ[0]//2 - save_as.get_size()[0] - 25, SZ[1] - save_as.get_size()[1] - save_as.get_size()[1]//2)
+    op_coords = (SZ[0]//2 + 25, SZ[1] - op.get_size()[1] - op.get_size()[1]//2)
+    bg = pygame.transform.scale(load_image('bg.png'), red_display.get_size())
+    actual_mode = '0'
+    level = [['0'] * 20 for i in range(20)]
+    group = pygame.sprite.Group()
+    size = red_display.get_size()[0] / 20
+    delta = 0
+    left_tri = ((display_coord[0] - 15, red_display.get_size()[1] / 2 - 35),
+                (display_coord[0] - 35, red_display.get_size()[1] / 2),
+                (display_coord[0] - 15, red_display.get_size()[1] / 2 + 35))
+    right_tri = ((display_coord[0] + red_display.get_size()[0] + 15, red_display.get_size()[1] / 2 - 35),
+                 (display_coord[0] + red_display.get_size()[0] + 35, red_display.get_size()[1] / 2),
+                 (display_coord[0] + red_display.get_size()[0] + 15, red_display.get_size()[1] / 2 + 35))
+    l_t_d = (left_tri[1][0], left_tri[0][1], 20, 70)
+    r_t_d = (right_tri[0][0], right_tri[0][1], 20, 70)
+    level_name = None
+    opened = False
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                if event.pos[0] in range(0, 50) and event.pos[1] in range(0, 50):
+                    running = False
+                if event.pos[0] in range(op_coords[0], op_coords[0] + op.get_size()[0]):
+                    if event.pos[1] in range(op_coords[1], op_coords[1] + op.get_size()[1]):
+                        try:
+                            level_name = prompt_level()
+                            opened = True
+                            level = level_data(level_name)
+                        except FileNotFoundError:
+                            opened = False
+                if event.pos[0] in range(round(r_t_d[0]), round(r_t_d[0] + r_t_d[2]) + 1):
+                    if event.pos[1] in range(round(r_t_d[1]), round(r_t_d[1] + r_t_d[3]) + 1):
+                        if delta == (len(level[0]) - 20) * size:
+                            for i in range(len(level)):
+                                level[i] = level[i] + ['0']
+                            delta += size
+                        else:
+                            delta += size
+                if event.pos[0] in range(round(l_t_d[0]), round(l_t_d[0] + l_t_d[2]) + 1):
+                    if event.pos[1] in range(round(l_t_d[1]), round(l_t_d[1] + l_t_d[3]) + 1):
+                        if delta == 0:
+                            for i in range(len(level)):
+                                level[i] = ['0'] + level[i]
+                        else:
+                            delta -= size
+                if event.pos[0] in range(round(display_coord[0]), round(display_coord[0])+red_display.get_size()[0]+1):
+                    if event.pos[1] in range(0, red_display.get_size()[1] + 1):
+                        x, y = return_coords(size, delta, event.pos, display_coord)
+                        level[y][x] = actual_mode
+                if opened and event.pos[0] in range(save_coords[0], save_coords[0] + save.get_size()[0] + 1):
+                    if event.pos[1] in range(save_coords[1], save_coords[1] + save.get_size()[1] + 1):
+                        file_save(level, level_name)
+                if not opened and event.pos[0] in range(save_as_coords[0],
+                                                        save_as_coords[0] + save_as.get_size()[0] + 1):
+                    if event.pos[1] in range(save_as_coords[1], save_as_coords[1] + save_as.get_size()[1] + 1):
+                        new_file_save(level)
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_b:
+                    actual_mode = 'b'
+                if event.key == pygame.K_o:
+                    actual_mode = 'o'
+                if event.key == pygame.K_s:
+                    actual_mode = 's'
+                if event.key == pygame.K_v:
+                    actual_mode = 'v'
+                if event.key == pygame.K_0:
+                    actual_mode = '0'
+        red_display.blit(bg, (0, 0))
+        for i in range(len(level)):
+            for j in range(len(level[i])):
+                if level[i][j] == '0':
+                    Wrecked(group, (j * size - delta, i * size), size, 128)
+                if level[i][j] == 's':
+                    Spike(group, (j * size - delta, i * size), size)
+                if level[i][j] == 'b':
+                    Block(group, (j * size - delta, i * size), size)
+                if level[i][j] == 'v':
+                    WinBlock(group, (size * j - delta, size * i), size)
+        group.draw(red_display)
+        group = pygame.sprite.Group()
+        screen.fill('black')
+        pygame.draw.polygon(screen, 'white', left_tri)
+        pygame.draw.polygon(screen, 'white', right_tri)
+        screen.blit(red_display, display_coord)
+        pygame.draw.polygon(screen, 'white', ((10, 25), (40, 10), (40, 40)), width=2)
+        screen.blit(op, op_coords)
+        pygame.draw.rect(screen, 'white', (op_coords, op.get_size()), width=2)
+        screen.blit(hint, (SZ[0]//2 - hint.get_size()[0]//2, op_coords[1] - hint.get_size()[1]))
+        if opened:
+            screen.blit(save, save_coords)
+            pygame.draw.rect(screen, 'white', (save_coords, save.get_size()), width=2)
+        else:
+            screen.blit(save_as, save_as_coords)
+            pygame.draw.rect(screen, 'white', (save_as_coords, save_as.get_size()), width=2)
+        clock.tick(FPS)
+        pygame.display.flip()
+
+
+def return_coords(size, delta, pos, level_coords):
+    x, y = (pos[0] - level_coords[0] + delta) // size, (pos[1] - level_coords[1]) // size
+    return int(x), int(y)
+
 
 if __name__ == '__main__':
-    game()
+    main_menu()
