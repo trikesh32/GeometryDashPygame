@@ -290,12 +290,17 @@ def game(screen, clock, level_name, skin_name):
         explosive = False
         bg = load_image('bg.png')
         bg = pygame.transform.scale(bg, SZ).convert_alpha()
+        first_time = True
+        pygame.mixer.music.load('resources\\music\\StereoMadness.mp3')
+        pygame.mixer.music.play()
         while actual_try:
             collides = level.collide_with_player()
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     actual_try = False
                     running = False
+                    pygame.mixer.music.load('resources\\music\\menuLoop.mp3')
+                    pygame.mixer.music.play(loops=10)
 
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
                     on_orb = False
@@ -317,8 +322,10 @@ def game(screen, clock, level_name, skin_name):
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     if is_paused:
                         is_paused = False
+                        pygame.mixer.music.unpause()
                     else:
                         is_paused = True
+                        pygame.mixer.music.pause()
                         pause(screen, level.btn_size, level.play_btn_coords, level.menu_btn_coords)
 
                 if is_paused and event.type == pygame.MOUSEBUTTONDOWN:
@@ -330,6 +337,7 @@ def game(screen, clock, level_name, skin_name):
                         if pos[1] in range(round(level.play_btn_coords[1]), round(level.play_btn_coords[1] +
                                                                                   level.btn_size)):
                             is_paused = False
+                            pygame.mixer.music.unpause()
 
                     if pos[0] in range(round(level.menu_btn_coords[0]), round(level.menu_btn_coords[0] +
                                                                               level.btn_size)):
@@ -338,6 +346,8 @@ def game(screen, clock, level_name, skin_name):
                                                                                   level.btn_size)):
                             actual_try = False
                             running = False
+                            pygame.mixer.music.load('resources\\music\\menuLoop.mp3')
+                            pygame.mixer.music.play(loops=10)
 
             if not is_paused:
 
@@ -390,6 +400,11 @@ def game(screen, clock, level_name, skin_name):
 
                 if not dead:
                     level.delta += V_X / FPS
+                elif first_time and dead:
+                    pygame.mixer.music.stop()
+                    pygame.mixer.music.load('resources\\music\\explode_11.ogg')
+                    pygame.mixer.music.play()
+                    first_time = False
                 else:
                     level.player_alpha = 0
                     explosive = True
@@ -422,7 +437,12 @@ def game(screen, clock, level_name, skin_name):
             clock.tick(FPS)
 
         if victory:
+            pygame.mixer.music.stop()
+            pygame.mixer.music.load('resources\\music\\red_sun.mp3')
+            pygame.mixer.music.play()
             win_screen(screen, clock)
+            pygame.mixer.music.load('resources\\music\\menuLoop.mp3')
+            pygame.mixer.music.play(loops=10)
 
 
 def win_screen(screen, clock):
@@ -491,6 +511,8 @@ def main_menu():
     running = True
     screen = pygame.display.set_mode(SZ)
     pygame.display.set_caption("GeometryDashPygame")
+    pygame.mixer.music.load('resources\\music\\menuLoop.mp3')
+    pygame.mixer.music.play(loops=10)
     clock = pygame.time.Clock()
     bg = load_image('bg.png')
     bg = pygame.transform.scale(bg, SZ)
@@ -506,6 +528,9 @@ def main_menu():
                     skin_changer(screen, clock)
                 if event.pos[0] in range(395, 560) and event.pos[1] in range(170, 335):
                     try:
+                        pygame.mixer.music.stop()
+                        pygame.mixer.music.load('resources\\music\\playSound_01.ogg')
+                        pygame.mixer.music.play()
                         level = prompt_level()
                         game(screen, clock, level, skin)
                     except FileNotFoundError:
