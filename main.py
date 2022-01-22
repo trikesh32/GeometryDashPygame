@@ -5,7 +5,7 @@ from tkinter.filedialog import asksaveasfilename, askopenfilename
 
 
 SZ = (960, 540)
-FPS = 180
+FPS = 200
 A = (10 / (FPS / 120)) * (SZ[1] / 400)
 JUMP_V = 300 * (SZ[1] / 400)
 V_X = 200 * (SZ[1] / 400)
